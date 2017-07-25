@@ -7,20 +7,20 @@ import (
 	"strings"
 	"time"
 
-	"gopkg.in/redis.v3"
+	"github.com/go-redis/redis"
 
 	"github.com/k1ng440/open-ethereum-pool/util"
 )
 
 type Config struct {
-	Endpoint string `json:"endpoint"`
-	Password string `json:"password"`
-	Database int64  `json:"database"`
-	PoolSize int    `json:"poolSize"`
+	Endpoints []string `json:"endpoints"`
+	Password  string   `json:"password"`
+	Database  int64    `json:"database"`
+	PoolSize  int      `json:"poolSize"`
 }
 
 type RedisClient struct {
-	client *redis.Client
+	client *redis.ClusterClient
 	prefix string
 }
 
@@ -79,16 +79,15 @@ type Worker struct {
 }
 
 func NewRedisClient(cfg *Config, prefix string) *RedisClient {
-	client := redis.NewClient(&redis.Options{
-		Addr:     cfg.Endpoint,
+	client := redis.NewClusterClient(&redis.ClusterOptions{
+		Addrs:    cfg.Endpoints,
 		Password: cfg.Password,
-		DB:       cfg.Database,
 		PoolSize: cfg.PoolSize,
 	})
 	return &RedisClient{client: client, prefix: prefix}
 }
 
-func (r *RedisClient) Client() *redis.Client {
+func (r *RedisClient) Client() *redis.ClusterClient {
 	return r.client
 }
 
@@ -119,7 +118,7 @@ func (r *RedisClient) GetWhitelist() ([]string, error) {
 }
 
 func (r *RedisClient) WriteNodeState(id string, height uint64, diff *big.Int) error {
-	tx := r.client.Multi()
+	tx := r.client.Pipeline()
 	defer tx.Close()
 
 	now := util.MakeTimestamp() / 1000
@@ -175,7 +174,7 @@ func (r *RedisClient) WriteShare(login, id string, params []string, diff int64, 
 	if exist {
 		return true, nil
 	}
-	tx := r.client.Multi()
+	tx := r.client.Pipeline()
 	defer tx.Close()
 
 	ms := util.MakeTimestamp()
@@ -198,7 +197,7 @@ func (r *RedisClient) WriteBlock(login, id string, params []string, diff, roundD
 	if exist {
 		return true, nil
 	}
-	tx := r.client.Multi()
+	tx := r.client.Pipeline()
 	defer tx.Close()
 
 	ms := util.MakeTimestamp()
@@ -395,7 +394,7 @@ func (r *RedisClient) GetPendingPayments() []*PendingPayment {
 
 // Deduct miner's balance for payment
 func (r *RedisClient) UpdateBalance(login string, amount int64) error {
-	tx := r.client.Multi()
+	tx := r.client.Pipeline()
 	defer tx.Close()
 
 	ts := util.MakeTimestamp() / 1000
@@ -412,7 +411,7 @@ func (r *RedisClient) UpdateBalance(login string, amount int64) error {
 }
 
 func (r *RedisClient) RollbackBalance(login string, amount int64) error {
-	tx := r.client.Multi()
+	tx := r.client.Pipeline()
 	defer tx.Close()
 
 	_, err := tx.Exec(func() error {
@@ -427,7 +426,7 @@ func (r *RedisClient) RollbackBalance(login string, amount int64) error {
 }
 
 func (r *RedisClient) WritePayment(login, txHash string, amount int64) error {
-	tx := r.client.Multi()
+	tx := r.client.Pipeline()
 	defer tx.Close()
 
 	ts := util.MakeTimestamp() / 1000
@@ -447,7 +446,7 @@ func (r *RedisClient) WritePayment(login, txHash string, amount int64) error {
 }
 
 func (r *RedisClient) WriteImmatureBlock(block *BlockData, roundRewards map[string]int64) error {
-	tx := r.client.Multi()
+	tx := r.client.Pipeline()
 	defer tx.Close()
 
 	_, err := tx.Exec(func() error {
@@ -536,7 +535,7 @@ func (r *RedisClient) WriteOrphan(block *BlockData) error {
 }
 
 func (r *RedisClient) WritePendingOrphans(blocks []*BlockData) error {
-	tx := r.client.Multi()
+	tx := r.client.Pipeline()
 	defer tx.Close()
 
 	_, err := tx.Exec(func() error {
@@ -570,7 +569,7 @@ func (r *RedisClient) IsMinerExists(login string) (bool, error) {
 func (r *RedisClient) GetMinerStats(login string, maxPayments int64) (map[string]interface{}, error) {
 	stats := make(map[string]interface{})
 
-	tx := r.client.Multi()
+	tx := r.client.Pipeline()
 	defer tx.Close()
 
 	cmds, err := tx.Exec(func() error {
@@ -651,7 +650,7 @@ func (r *RedisClient) CollectStats(smallWindow time.Duration, maxBlocks, maxPaym
 	window := int64(smallWindow / time.Second)
 	stats := make(map[string]interface{})
 
-	tx := r.client.Multi()
+	tx := r.client.Pipeline()
 	defer tx.Close()
 
 	now := util.MakeTimestamp() / 1000
@@ -705,7 +704,7 @@ func (r *RedisClient) CollectWorkersStats(sWindow, lWindow time.Duration, login 
 	largeWindow := int64(lWindow / time.Second)
 	stats := make(map[string]interface{})
 
-	tx := r.client.Multi()
+	tx := r.client.Pipeline()
 	defer tx.Close()
 
 	now := util.MakeTimestamp() / 1000
@@ -767,7 +766,7 @@ func (r *RedisClient) CollectWorkersStats(sWindow, lWindow time.Duration, login 
 func (r *RedisClient) CollectLuckStats(windows []int) (map[string]interface{}, error) {
 	stats := make(map[string]interface{})
 
-	tx := r.client.Multi()
+	tx := r.client.Pipeline()
 	defer tx.Close()
 
 	max := int64(windows[len(windows)-1])

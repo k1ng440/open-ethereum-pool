@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"testing"
 
-	"gopkg.in/redis.v3"
+	"github.com/go-redis/redis"
 )
 
 var r *RedisClient
